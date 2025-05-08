@@ -6,6 +6,8 @@ import LoadingIndicator from "flarum/common/components/LoadingIndicator";
 import VirtualItem from "../../common/models/VirtualItem";
 import Checkbox from "flarum/common/components/Checkbox";
 import Select from "flarum/common/components/Select";
+import icon from 'flarum/common/helpers/icon';
+import withAttr from 'flarum/common/utils/withAttr';
 import createModal from "./createModal";
 function _trans(key: string, ...a: any[]) {
     return app.translator.trans(`xypp-store-virtual-item.admin.table.${key}`, ...a);
@@ -30,101 +32,132 @@ export default class adminPage extends ExtensionPage {
             method: "GET",
             url: app.forum.attribute("apiUrl") + "/virtual-items-name"
         }).then(((data: { name: string, count: number }[]) => {
-            this.filterMap = { all: _trans("all") as string };
+            // this.filterMap = { all: _trans("all") as string };
             data.forEach((item) => {
                 this.filterMap[item.name] = `${item.name}(${item.count})`;
             })
         }) as any)
     }
     content(vnode: any) {
-        return <div className="xypp-store-virtual-item-adminPage-container">
-            <div>
-                <Button className="Button Button--primary" onclick={this.create.bind(this)} >
-                    {_trans("create")}
-                </Button>
-                <Select options={this.filterMap} value={this.currentFilter} onchange={((e: string) => {
-                    this.currentFilter = e;
-                    this.offset = 0;
-                    this.items = [];
-                    this.more = true;
-                    this.loadMore();
-                }).bind(this)}></Select>
-                {showIf(this.selected.length > 0,
-                    <Button className="Button Button--primary" onclick={this.removeBatch.bind(this)} disabled={this.batchRemoving} loading={this.batchRemoving} >
-                        {_trans("delete_batch", { count: this.selected.length })}
+        return <div className="ExtensionPage-settings">
+            <div className="container xypp-store-virtual-item-adminPage-container">
+                <div className="xypp-store-virtual-item-adminPage-actions">
+
+                    <div className="actions-start">
+                        <span className="Select">
+                            <select
+                              className="Select-input FormControl"
+                              onchange={
+                                withAttr('value',
+                                    ((e: string) => {
+                                        this.currentFilter = e;
+                                        this.name = this.currentFilter == 'all' ? '' : this.currentFilter;
+                                        this.offset = 0;
+                                        this.items = [];
+                                        this.more = true;
+                                        this.loadMore();
+                                    }).bind(this)
+                                )
+                              }
+                              value={this.currentFilter}
+                            >
+                              <option value="all">{ _trans("all")}</option>
+                              {Object.keys(this.filterMap).map((key) => (
+                                <option value={key}>{this.filterMap[key]}</option>
+                              ))}
+                            </select>
+                            {icon('fas fa-sort', { className: 'Select-caret' })}
+                        </span>
+
+                        {showIf(this.selected.length > 0,
+                            <Button className="Button Button--danger" onclick={this.removeBatch.bind(this)} disabled={this.batchRemoving} loading={this.batchRemoving} >
+                                {_trans("delete_batch", { count: this.selected.length })}
+                            </Button>
+                        )}
+                    </div>
+
+                    <Button className="Button Button--primary" onclick={this.create.bind(this)} >
+                        {_trans("create")}
                     </Button>
-                )}
+                </div>
+                <table className="Table Table--full">
+                    <thead>
+                        <tr>
+                            <th>
+                                <input type="checkbox" oninput={(e: InputEvent) => {
+                                    const checked = (e.currentTarget as HTMLInputElement).checked as boolean;
+                                    this.selectedMap = {};
+                                    this.selected = [];
+                                    this.items.forEach((item) => {
+                                        this.selectedMap[item.id()!] = checked;
+                                        if (checked) this.selected.push(item.id()!);
+                                    })
+                                    m.redraw();
+                                }} />
+                            </th>
+                            <th>{_trans("id")}</th>
+                            <th>{_trans("name")}</th>
+                            <th>{_trans("key")}</th>
+                            <th>{_trans("assign")}</th>
+                            <th>{_trans("operation")}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {this.items.map((item) => {
+                            const id = item.id() as string;
+                            const removing = this.isRemoving[item.id()!] || (this.selectedMap[id] && this.batchRemoving) || false
+                            return (
+                                <tr>
+                                    <td>
+                                        <input
+                                            type="checkbox"
+                                            checked={this.selectedMap[id]}
+                                            oninput={((e: InputEvent) => {
+                                                this.selectedMap[id] = (e.currentTarget as HTMLInputElement).checked as boolean;
+                                                if (!this.selectedMap[id]) this.selected = this.selected.filter(id => id != item.id());
+                                                else this.selected.push(id);
+                                            }).bind(this)}
+                                            disabled={this.batchRemoving}
+                                        />
+                                    </td>
+                                    <td>{item.id()}</td>
+                                    <td>{item.name()}</td>
+                                    <td>{item.key()}</td>
+                                    <td>{item.assign_user_id()}</td>
+                                    <td>
+                                        <Button className="Button Button--danger" onclick={this.removeOne.bind(this)} data-id={item.id()} disabled={removing} loading={removing}>
+                                            <i class="fas fa-trash"></i>
+                                        </Button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                        <tr>
+                            <td></td><td></td>
+                            <td>
+                                {showIf(this.item_loading, <LoadingIndicator />,
+                                    showIf(this.more,
+                                        <Button className="Button Button--primary" onclick={this.loadMore.bind(this)} >
+                                            {_trans("load_more")}
+                                        </Button>)
+                                )}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <table className="Table Table--full">
-                <thead>
-                    <tr>
-                        <th>
-                            <input type="checkbox" oninput={(e: InputEvent) => {
-                                const checked = (e.currentTarget as HTMLInputElement).checked as boolean;
-                                this.selectedMap = {};
-                                this.selected = [];
-                                this.items.forEach((item) => {
-                                    this.selectedMap[item.id()!] = checked;
-                                    if (checked) this.selected.push(item.id()!);
-                                })
-                                m.redraw();
-                            }} />
-                        </th>
-                        <th>{_trans("id")}</th>
-                        <th>{_trans("name")}</th>
-                        <th>{_trans("key")}</th>
-                        <th>{_trans("assign")}</th>
-                        <th>{_trans("operation")}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {this.items.map((item) => {
-                        const id = item.id() as string;
-                        const removing = this.isRemoving[item.id()!] || (this.selectedMap[id] && this.batchRemoving) || false
-                        return (
-                            <tr>
-                                <td>
-                                    <input
-                                        type="checkbox"
-                                        checked={this.selectedMap[id]}
-                                        oninput={((e: InputEvent) => {
-                                            this.selectedMap[id] = (e.currentTarget as HTMLInputElement).checked as boolean;
-                                            if (!this.selectedMap[id]) this.selected = this.selected.filter(id => id != item.id());
-                                            else this.selected.push(id);
-                                        }).bind(this)}
-                                        disabled={this.batchRemoving}
-                                    />
-                                </td>
-                                <td>{item.id()}</td>
-                                <td>{item.name()}</td>
-                                <td>{item.key()}</td>
-                                <td>{item.assign_user_id()}</td>
-                                <td>
-                                    <Button className="Button Button--danger" onclick={this.removeOne.bind(this)} data-id={item.id()} disabled={removing} loading={removing}>
-                                        <i class="fas fa-trash"></i>
-                                    </Button>
-                                </td>
-                            </tr>
-                        )
-                    })}
-                    <tr>
-                        <td></td><td></td>
-                        <td>
-                            {showIf(this.item_loading, <LoadingIndicator />,
-                                showIf(this.more,
-                                    <Button className="Button Button--primary" onclick={this.loadMore.bind(this)} >
-                                        {_trans("load_more")}
-                                    </Button>)
-                            )}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
         </div>
     }
 
     create() {
-        app.modal.show(createModal);
+        app.modal.show(createModal, {
+          itemsCreated: () => {
+            this.offset = 0;
+            this.items = [];
+            this.more = true;
+            this.loadMore();
+          }
+        });
     }
     async loadMore() {
         this.item_loading = true;
